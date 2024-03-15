@@ -48,6 +48,10 @@ module "this" {
         working_dir = path.module
         importpath  = "./cmd/logrotate"
       }
+      resources = {
+        # This mustn't idle for the log rotation to work properly
+        cpu_idle = true
+      }
       env = [{
         name  = "LOG_PATH"
         value = "/logs"
@@ -95,6 +99,14 @@ module "triggers" {
   notification_channels = var.notification_channels
 }
 
+locals {
+  alerts = tomap({
+    for type, schema in var.types : 
+    "BQ DTS ${var.name}-${type}" => google_monitoring_alert_policy.bq_dts[type].id 
+    if schema.create_table == null || schema.create_table
+  })
+}
+
 module "recorder-dashboard" {
   source       = "../dashboard/cloudevent-receiver"
   service_name = var.name
@@ -104,7 +116,7 @@ module "recorder-dashboard" {
 
   notification_channels = var.notification_channels
 
-  alerts = tomap({ for type, schema in var.types : "BQ DTS ${var.name}-${type}" => google_monitoring_alert_policy.bq_dts[type].id })
+  alerts = local.alerts
 
   triggers = {
     for type, schema in var.types : "type: ${type}" => {

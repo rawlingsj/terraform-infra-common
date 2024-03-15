@@ -52,5 +52,19 @@ variable "types" {
     alert_threshold       = optional(number, 50000)
     notification_channels = optional(list(string), [])
     partition_field       = optional(string)
+    table_id              = optional(string)
+    create_table          = optional(bool, true)
   }))
+}
+
+variable "dataset_id" {
+  description = "The name of the BigQuery dataset to create."
+  type        = string
+  default     = null
+}
+
+variable "create_dataset" {
+  description = "Whether to create the BigQuery dataset. Set to false if the dataset already exists."
+  type        = bool
+  default     = true
 }

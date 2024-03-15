@@ -87,7 +87,7 @@ resource "google_pubsub_subscription" "this" {
   topic = var.broker
 
   // TODO: Tune this and/or make it configurable?
-  ack_deadline_seconds = 300
+  ack_deadline_seconds = var.ack_deadline_seconds
 
   filter = join(" AND ", local.filter-elements)
 

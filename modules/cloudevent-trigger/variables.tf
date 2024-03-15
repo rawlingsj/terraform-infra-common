@@ -57,3 +57,9 @@ variable "notification_channels" {
   description = "List of notification channels to alert."
   type        = list(string)
 }
+
+variable "ack_deadline_seconds" {
+  description = "The number of seconds to acknowledge a message before it is redelivered."
+  type        = number
+  default     = 300
+}
