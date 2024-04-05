@@ -10,21 +10,30 @@ resource "google_service_account" "recorder" {
   description  = "Dedicated service account for our recorder service."
 }
 
-// The recorder service account is the only identity that should be writing
-// to the regional GCS buckets.
-//todo need to allow GCP to write to the bucket
+// If method is gcs, Create a Pub/Sub service identity for the project
 resource "google_project_service_identity" "pubsub" {
   provider = google-beta
   project  = var.project_id
   service  = "pubsub.googleapis.com"
 }
 
-resource "google_storage_bucket_iam_binding" "recorder-writes-to-gcs-buckets" {
-  for_each = var.regions
+// If method is gcs, GCP subscription will write events directly to a GCS bucket.
+resource "google_storage_bucket_iam_binding" "broker-writes-to-gcs-buckets" {
+  for_each = var.method == "gcs" ? var.regions : {}
 
   bucket  = google_storage_bucket.recorder[each.key].name
   role    = "roles/storage.admin"
   members = ["serviceAccount:${google_project_service_identity.pubsub.email}"]
+}
+
+// The recorder service account is the only identity that should be writing
+// to the regional GCS buckets.
+resource "google_storage_bucket_iam_binding" "recorder-writes-to-gcs-buckets" {
+  for_each = var.method == "trigger" ? var.regions : {}
+
+  bucket  = google_storage_bucket.recorder[each.key].name
+  role    = "roles/storage.admin"
+  members = ["serviceAccount:${google_service_account.recorder.email}"]
 }
 
 module "this" {
@@ -50,27 +59,11 @@ module "this" {
         name       = "logs"
         mount_path = "/logs"
       }]
-      resources = {
-        limits = {
-          cpu    = "2000m"
-          memory = "8Gi" # todo JR make configurable
-        }
-        # This mustn't idle for the log rotation to work properly
-        cpu_idle = true
-      }
     }
     "logrotate" = {
       source = {
         working_dir = path.module
         importpath  = "./cmd/logrotate"
-      }
-      resources = {
-        limits = {
-          cpu    = "2000m"
-          memory = "8Gi" # todo JR make configurable
-        }
-        # This mustn't idle for the log rotation to work properly
-        cpu_idle = true
       }
       env = [{
         name  = "LOG_PATH"
@@ -100,7 +93,27 @@ resource "random_id" "trigger-suffix" {
 }
 
 // Create a trigger for each region x type that sends events to the recorder service.
-module "this_gcs" {
+module "triggers" {
+  for_each = var.method == "trigger" ? local.regional-types : {}
+
+  source = "../cloudevent-trigger"
+
+  name       = "${var.name}-${random_id.trigger-suffix[each.value.type].hex}"
+  project_id = var.project_id
+  broker     = var.broker[each.value.region]
+  filter     = { "type" : each.value.type }
+
+  depends_on = [module.this]
+  private-service = {
+    region = each.value.region
+    name   = var.name
+  }
+
+  notification_channels = var.notification_channels
+}
+
+
+module "sync_gcs" {
   for_each = var.method == "gcs" ? local.regional-types : {}
 
   source = "../cloudevent-sync-gcs"
