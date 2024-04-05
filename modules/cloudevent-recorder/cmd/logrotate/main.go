@@ -29,6 +29,24 @@ func main() {
 		clog.Fatalf("Error processing environment: %v", err)
 	}
 
+	// log the filenames and file sizes of the files in the log path
+	clog.Infof("Log path: %s", rc.LogPath)
+	files, err := os.ReadDir(rc.LogPath)
+	if err != nil {
+		clog.Fatalf("Failed to read directory: %v", err)
+
+	}
+	// todo try this
+	clog.Infof("Files in log path: %d", len(files))
+	//for _, file := range files {
+	//	fi, err := file.Info()
+	//	if err != nil {
+	//		clog.Errorf("Failed to get file info: %v", err)
+	//		continue
+	//	}
+	//	clog.Infof("File: %s, Size: %d", file.Name(), fi.Size())
+	//}
+
 	uploader := rotate.NewUploader(rc.LogPath, rc.Bucket, rc.FlushInterval)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

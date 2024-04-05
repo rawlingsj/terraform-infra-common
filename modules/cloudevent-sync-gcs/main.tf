@@ -19,43 +19,6 @@ resource "google_project_service_identity" "pubsub" {
   service  = "pubsub.googleapis.com"
 }
 
-// Authorize Pub/Sub to impersonate the delivery service account to authorize
-// deliveries using this service account.
-// NOTE: we use binding vs. member because we expect nothing but pubsub to be
-// able to assume this identity.
-resource "google_service_account_iam_binding" "allow-pubsub-to-mint-tokens" {
-  service_account_id = google_service_account.this.name
-
-  role    = "roles/iam.serviceAccountTokenCreator"
-  members = ["serviceAccount:${google_project_service_identity.pubsub.email}"]
-}
-
-module "audit-trigger-serviceaccount" {
-  source = "../audit-serviceaccount"
-
-  project_id      = var.project_id
-  service-account = google_service_account.this.email
-
-  # The absence of authorized identities here means that
-  # nothing is authorized to act as this service account.
-  # Note: Cloud Pub/Sub's usage doesn't show up in the
-  # audit logs.
-
-  notification_channels = var.notification_channels
-}
-
-// Authorize this service account to invoke the private service receiving
-// events from this trigger.
-module "authorize-delivery" {
-  source = "../authorize-private-service"
-
-  project_id = var.project_id
-  region     = var.private-service.region
-  name       = var.private-service.name
-
-  service-account = google_service_account.this.email
-}
-
 locals {
   // See https://cloud.google.com/pubsub/docs/subscription-message-filter#filtering_syntax
   filter-elements = concat(
@@ -86,28 +49,15 @@ resource "google_pubsub_subscription" "this" {
   name  = "${var.name}-${random_string.suffix.result}"
   topic = var.broker
 
-  // TODO: Tune this and/or make it configurable?
   ack_deadline_seconds = var.ack_deadline_seconds
 
   filter = join(" AND ", local.filter-elements)
 
-  push_config {
-    push_endpoint = module.authorize-delivery.uri
-
-    // Authenticate requests to this service using tokens minted
-    // from the given service account.
-    oidc_token {
-      service_account_email = google_service_account.this.email
-    }
-
-    // Make the body of the push notification the raw Pub/Sub message.
-    // Include the Pub/Sub message attributes as HTTP headers.
-    // This aligns the shape of the notification with the "binary"
-    // Cloud Event delivery form.
-    // See: https://cloud.google.com/pubsub/docs/payload-unwrapping
-    no_wrapper {
-      write_metadata = true
-    }
+  cloud_storage_config {
+    bucket = var.bucket
+    filename_prefix = "${var.filter["type"]}/"
+    max_bytes = 1000000000 // 1GB
+    max_duration = "600s"
   }
 
   expiration_policy {
@@ -117,10 +67,6 @@ resource "google_pubsub_subscription" "this" {
   dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.dead-letter.id
     max_delivery_attempts = var.max_delivery_attempts
-  }
-
-  retry_policy {
-    minimum_backoff = "180s" // todo make configurable
   }
 }
 

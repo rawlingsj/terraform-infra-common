@@ -12,15 +12,23 @@ resource "google_service_account" "recorder" {
 
 // The recorder service account is the only identity that should be writing
 // to the regional GCS buckets.
+//todo need to allow GCP to write to the bucket
+resource "google_project_service_identity" "pubsub" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "pubsub.googleapis.com"
+}
+
 resource "google_storage_bucket_iam_binding" "recorder-writes-to-gcs-buckets" {
   for_each = var.regions
 
   bucket  = google_storage_bucket.recorder[each.key].name
   role    = "roles/storage.admin"
-  members = ["serviceAccount:${google_service_account.recorder.email}"]
+  members = ["serviceAccount:${google_project_service_identity.pubsub.email}"]
 }
 
 module "this" {
+  count      = var.method == "trigger" ? 1 : 0
   source     = "../regional-go-service"
   project_id = var.project_id
   name       = var.name
@@ -42,6 +50,14 @@ module "this" {
         name       = "logs"
         mount_path = "/logs"
       }]
+      resources = {
+        limits = {
+          cpu    = "2000m"
+          memory = "8Gi" # todo JR make configurable
+        }
+        # This mustn't idle for the log rotation to work properly
+        cpu_idle = true
+      }
     }
     "logrotate" = {
       source = {
@@ -49,6 +65,10 @@ module "this" {
         importpath  = "./cmd/logrotate"
       }
       resources = {
+        limits = {
+          cpu    = "2000m"
+          memory = "8Gi" # todo JR make configurable
+        }
         # This mustn't idle for the log rotation to work properly
         cpu_idle = true
       }
@@ -80,17 +100,17 @@ resource "random_id" "trigger-suffix" {
 }
 
 // Create a trigger for each region x type that sends events to the recorder service.
-module "triggers" {
-  for_each = local.regional-types
+module "this_gcs" {
+  for_each = var.method == "gcs" ? local.regional-types : {}
 
-  source = "../cloudevent-trigger"
+  source = "../cloudevent-sync-gcs"
 
   name       = "${var.name}-${random_id.trigger-suffix[each.value.type].hex}"
   project_id = var.project_id
   broker     = var.broker[each.value.region]
   filter     = { "type" : each.value.type }
+  bucket     = google_storage_bucket.recorder[each.value.region].name
 
-  depends_on = [module.this]
   private-service = {
     region = each.value.region
     name   = var.name
@@ -101,8 +121,8 @@ module "triggers" {
 
 locals {
   alerts = tomap({
-    for type, schema in var.types : 
-    "BQ DTS ${var.name}-${type}" => google_monitoring_alert_policy.bq_dts[type].id 
+    for type, schema in var.types :
+    "BQ DTS ${var.name}-${type}" => google_monitoring_alert_policy.bq_dts[type].id
     if schema.create_table == null || schema.create_table
   })
 }

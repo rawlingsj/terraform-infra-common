@@ -35,13 +35,29 @@ func main() {
 		clog.Fatalf("failed to create event client, %v", err)
 	}
 	if err := c.StartReceiver(ctx, func(ctx context.Context, event cloudevents.Event) error {
+		// Log the event data for debugging
+		clog.Infof("Event ID/Data: %s - %s", event.ID(), event.Data())
+
 		dir := filepath.Join(env.LogPath, event.Type())
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
 		}
 
 		filename := filepath.Join(dir, event.ID())
-		return os.WriteFile(filename, event.Data(), 0600)
+		if err := os.WriteFile(filename, event.Data(), 0600); err != nil {
+			clog.Errorf("failed to write file: %v", err)
+			return err
+		}
+
+		// log the size of the file
+		fi, err := os.Stat(filename)
+		if err != nil {
+			clog.Errorf("failed to stat file: %v", err)
+			return err
+		}
+		clog.Infof("file %s size: %d", filename, fi.Size())
+
+		return nil
 	}); err != nil {
 		clog.Fatalf("failed to start event receiver, %v", err)
 	}

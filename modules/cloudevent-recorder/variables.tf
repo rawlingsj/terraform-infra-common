@@ -68,3 +68,13 @@ variable "create_dataset" {
   type        = bool
   default     = true
 }
+
+variable "method" { # todo add bq
+  type        = string
+  description = "The method used to transfer events (e.g., trigger, gcs)."
+  default     = "trigger"
+  validation {
+    condition     = contains(["trigger", "gcs"], var.method)
+    error_message = "The environment must be one of: trigger or gcs."
+  }
+}
