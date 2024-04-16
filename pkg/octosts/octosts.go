@@ -9,8 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-
-	"google.golang.org/api/idtoken"
+	"os"
 
 	"chainguard.dev/sdk/sts"
 )
@@ -33,17 +32,18 @@ func Token(ctx context.Context, policyName, org, repo string) (string, error) {
 		sts.WithIdentity(policyName),
 	)
 
-	ts, err := idtoken.NewTokenSource(ctx, "octo-sts.dev" /* aud */)
-	if err != nil {
-		return "", err
-	}
+	//ts, err := idtoken.NewTokenSource(ctx, "octo-sts.dev" /* aud */)
+	//if err != nil {
+	//	return "", err
+	//}
 
-	token, err := ts.Token()
-	if err != nil {
-		return "", err
-	}
+	//token, err := ts.Token()
+	//if err != nil {
+	wipToken := os.Getenv("WIP_TOKEN")
 
-	res, err := xchg.Exchange(ctx, token.AccessToken)
+	//}
+
+	res, err := xchg.Exchange(ctx, wipToken)
 	if err != nil {
 		return "", err
 	}
