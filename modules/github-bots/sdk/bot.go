@@ -124,7 +124,23 @@ func Serve(b Bot) {
 				}
 
 				return h(ctx, pre.Body, pr)
+
+			case CheckRunHandler:
+				logger.Debug("handling pull request event")
+
+				var pre schemas.Wrapper[github.CheckRunEvent]
+				if err := event.DataAs(&pre); err != nil {
+					return err
+				}
+
+				cr := &github.CheckRun{}
+				if err := marshalTo(pre.Body.CheckRun, cr); err != nil {
+					return err
+				}
+
+				return h(ctx, pre.Body, cr)
 			}
+
 		}
 
 		clog.FromContext(ctx).With("event", event).Debugf("ignoring event")

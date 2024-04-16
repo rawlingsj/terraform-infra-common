@@ -22,9 +22,16 @@ func (r WorkflowRunHandler) EventType() EventType {
 	return WorkflowRunEvent
 }
 
+type CheckRunHandler func(ctx context.Context, wre github.CheckRunEvent, wr *github.CheckRun) error
+
+func (r CheckRunHandler) EventType() EventType {
+	return CheckRunEvent
+}
+
 type EventType string
 
 const (
 	PullRequestEvent EventType = "dev.chainguard.github.pull_request"
 	WorkflowRunEvent EventType = "dev.chainguard.github.workflow_run"
+	CheckRunEvent    EventType = "dev.chainguard.github.check_run"
 )
