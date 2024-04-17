@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"runtime/debug"
 
 	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/clog/gcp"
@@ -82,21 +81,33 @@ func Serve(b Bot) {
 
 	logger.Infof("starting bot %s receiver on port %d", b.Name, env.Port)
 	if err := c.StartReceiver(ctx, func(ctx context.Context, event cloudevents.Event) error {
-		clog.FromContext(ctx).With("event", event).Debugf("received event")
+		logger.Infof("received event %s", event.Type())
 
-		defer func() {
-			if err := recover(); err != nil {
-				clog.Errorf("panic: %s", debug.Stack())
-			}
-		}()
+		logger.Infof("received event %v", event)
 
-		logger.Info("handling event", "type", event.Type())
+		// loop over all event headers and log them
+		for k, v := range event.Context.GetExtensions() {
+			logger.Infof("%s - %v", k, v)
+		}
+
+		// add event attributes to context
+		ctx = context.WithValue(ctx, "ce-attributes", event.Extensions())
+		ctx = context.WithValue(ctx, "ce-subject", event.Subject())
+		ctx = context.WithValue(ctx, "ce-type", event.Type())
+
+		//defer func() {
+		//	if err := recover(); err != nil {
+		//		clog.Errorf("panic: %s", debug.Stack())
+		//	}
+		//}()
+
+		logger.Infof("handling event %s", event.Type())
 
 		// dispatch event to n handlers
 		if handler, ok := b.Handlers[EventType(event.Type())]; ok {
 			switch h := handler.(type) {
 			case WorkflowRunHandler:
-				logger.Debug("handling workflow run event")
+				logger.Info("handling workflow run event")
 
 				var wre schemas.Wrapper[github.WorkflowRunEvent]
 				if err := event.DataAs(&wre); err != nil {
@@ -111,7 +122,7 @@ func Serve(b Bot) {
 				return h(ctx, wre.Body, wr)
 
 			case PullRequestHandler:
-				logger.Debug("handling pull request event")
+				logger.Info("handling pull request event")
 
 				var pre schemas.Wrapper[github.PullRequestEvent]
 				if err := event.DataAs(&pre); err != nil {

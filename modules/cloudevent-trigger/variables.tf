@@ -39,6 +39,18 @@ EOD
   default     = {}
 }
 
+variable "filter_has_attributes" {
+  description = "List of attribute keys to check for presence."
+  type        = list(string)
+  default     = []
+}
+
+variable "filter_not_has_attributes" {
+  description = "List of attribute keys to check for absence."
+  type        = list(string)
+  default     = []
+}
+
 variable "private-service" {
   description = "The private cloud run service that is subscribing to these events."
   type = object({
