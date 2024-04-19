@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
+
+	"github.com/chainguard-dev/terraform-infra-common/pkg/httpmetrics"
 
 	"github.com/chainguard-dev/clog"
 	"github.com/chainguard-dev/clog/gcp"
 	"github.com/chainguard-dev/terraform-infra-common/modules/github-events/schemas"
-	"github.com/chainguard-dev/terraform-infra-common/pkg/httpmetrics"
 	mce "github.com/chainguard-dev/terraform-infra-common/pkg/httpmetrics/cloudevents"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/google/go-github/v61/github"
@@ -60,7 +62,7 @@ func Serve(b Bot) {
 	}
 	ctx := context.Background()
 
-	slog.SetDefault(slog.New(gcp.NewHandler(slog.LevelInfo)))
+	slog.SetDefault(slog.New(gcp.NewHandler(slog.LevelDebug)))
 
 	logger := clog.FromContext(ctx)
 
@@ -81,77 +83,92 @@ func Serve(b Bot) {
 
 	logger.Infof("starting bot %s receiver on port %d", b.Name, env.Port)
 	if err := c.StartReceiver(ctx, func(ctx context.Context, event cloudevents.Event) error {
-		logger.Infof("received event %s", event.Type())
-
-		logger.Infof("received event %v", event)
-
-		// loop over all event headers and log them
+		// loop over all event headers and add them to the context
 		for k, v := range event.Context.GetExtensions() {
-			logger.Infof("%s - %v", k, v)
+			ctx = context.WithValue(ctx, k, v)
 		}
 
 		// add event attributes to context
 		ctx = context.WithValue(ctx, "ce-attributes", event.Extensions())
-		ctx = context.WithValue(ctx, "ce-subject", event.Subject())
 		ctx = context.WithValue(ctx, "ce-type", event.Type())
 
-		//defer func() {
-		//	if err := recover(); err != nil {
-		//		clog.Errorf("panic: %s", debug.Stack())
-		//	}
-		//}()
-
+		defer func() {
+			if err := recover(); err != nil {
+				logger.Errorf("panic: %s", debug.Stack())
+			}
+		}()
 		logger.Infof("handling event %s", event.Type())
 
 		// dispatch event to n handlers
 		if handler, ok := b.Handlers[EventType(event.Type())]; ok {
 			switch h := handler.(type) {
 			case WorkflowRunHandler:
-				logger.Info("handling workflow run event")
+				logger.Debug("handling workflow run event")
 
 				var wre schemas.Wrapper[github.WorkflowRunEvent]
 				if err := event.DataAs(&wre); err != nil {
+					logger.Errorf("failed to unmarshal workflow run event: %v", err)
 					return err
 				}
 
 				wr := &github.WorkflowRun{}
 				if err := marshalTo(wre.Body.WorkflowRun, wr); err != nil {
+					logger.Errorf("failed to marshal workflow run: %v", err)
 					return err
 				}
 
-				return h(ctx, wre.Body, wr)
+				err = h(ctx, wre.Body, wr)
+				if err != nil {
+					logger.Errorf("failed to handle workload run event: %v", err)
+					return err
+				}
+				logger.Debug("handled workflow run event")
+				return nil
 
 			case PullRequestHandler:
-				logger.Info("handling pull request event")
+				logger.Debug("handling pull request event")
 
 				var pre schemas.Wrapper[github.PullRequestEvent]
 				if err := event.DataAs(&pre); err != nil {
+					logger.Errorf("failed to unmarshal pull request event: %v", err)
 					return err
 				}
 
 				pr := &github.PullRequest{}
 				if err := marshalTo(pre.Body.PullRequest, pr); err != nil {
+					logger.Errorf("failed to marshal pull request: %v", err)
 					return err
 				}
 
-				return h(ctx, pre.Body, pr)
+				err = h(ctx, pre.Body, pr)
+				if err != nil {
+					logger.Errorf("failed to handle pull request: %v", err)
+					return err
+				}
+				return nil
 
 			case CheckRunHandler:
-				logger.Debug("handling pull request event")
+				logger.Info("handling pull request event")
 
 				var pre schemas.Wrapper[github.CheckRunEvent]
 				if err := event.DataAs(&pre); err != nil {
+					logger.Errorf("failed to unmarshal check run event: %v", err)
 					return err
 				}
 
 				cr := &github.CheckRun{}
 				if err := marshalTo(pre.Body.CheckRun, cr); err != nil {
+					logger.Errorf("failed to marshal check run: %v", err)
 					return err
 				}
 
-				return h(ctx, pre.Body, cr)
+				err = h(ctx, pre.Body, cr)
+				if err != nil {
+					logger.Errorf("failed to handle check run: %v", err)
+					return err
+				}
+				return nil
 			}
-
 		}
 
 		clog.FromContext(ctx).With("event", event).Debugf("ignoring event")

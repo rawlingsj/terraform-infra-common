@@ -27,6 +27,7 @@ func NewGitHubClient(ctx context.Context, org, repo, policyName string) GitHubCl
 		repo:       repo,
 		policyName: policyName,
 	}
+	clog.Infof("creating new GitHub client for %s/%s - %s", org, repo, policyName)
 	return GitHubClient{
 		inner: github.NewClient(oauth2.NewClient(ctx, ts)),
 		ts:    ts,
@@ -135,61 +136,59 @@ func (c GitHubClient) SetComment(ctx context.Context, pr *github.PullRequest, bo
 	return nil
 }
 
-func (c GitHubClient) GetWorkflowRunLogs(ctx context.Context, wr *github.WorkflowRun) ([]byte, error) {
-	if logURL, resp, err := c.inner.Actions.GetWorkflowRunLogs(ctx, *wr.Repository.Owner.Login, *wr.Repository.Name, *wr.ID, 5); err != nil {
-		return nil, err
-	} else {
-		defer resp.Body.Close()
+func (c GitHubClient) GetWorkflowRunLogs(ctx context.Context, wre github.WorkflowRunEvent) ([]byte, error) {
+	clog.FromContext(ctx).Debugf("Getting logs for workflow run %d", *wre.WorkflowRun.ID)
 
-		if resp == nil {
-			return nil, fmt.Errorf("failed to get logs")
-		}
-		if resp.StatusCode != http.StatusFound {
-			return nil, fmt.Errorf("failed to get logs, %s", resp.Status)
-		}
-
-		logsResp, err := c.Client().Client().Get(logURL.String())
-		if err != nil {
-			return []byte{}, err
-		}
-
-		var body []byte
-		if logsResp.Body != nil {
-			defer logsResp.Body.Close()
-
-			body, _ = io.ReadAll(logsResp.Body)
-		}
-
-		if logsResp.StatusCode != http.StatusOK {
-			return []byte{}, fmt.Errorf("failed to get logs, %s", string(body))
-		}
-
-		if logsResp.StatusCode == http.StatusNotFound || logsResp.StatusCode == http.StatusGone {
-			return []byte{}, fmt.Errorf("logs expired")
-		}
-		return body, nil
+	logURL, resp, err := c.inner.Actions.GetWorkflowRunLogs(ctx, *wre.Repo.Owner.Login, *wre.Repo.Name, *wre.WorkflowRun.ID, 5)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initiate log retrieval: %w", err)
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusFound {
+		return nil, fmt.Errorf("unexpected status code when getting logs: %s", resp.Status)
+	}
+
+	logsResp, err := http.Get(logURL.String()) // Simplified client access
+	if err != nil {
+		return nil, fmt.Errorf("error fetching logs from URL: %w", err)
+	}
+	defer logsResp.Body.Close()
+
+	body, err := io.ReadAll(logsResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading log response body: %w", err)
+	}
+
+	if logsResp.StatusCode != http.StatusOK {
+		if logsResp.StatusCode == http.StatusNotFound || logsResp.StatusCode == http.StatusGone {
+			return nil, fmt.Errorf("logs not found or expired")
+		}
+		return nil, fmt.Errorf("failed to fetch logs, status %d: %s", logsResp.StatusCode, string(body))
+	}
+
+	return body, nil
 }
 
-func (c GitHubClient) GetWorkloadRunPullRequestNumber(ctx context.Context, wr *github.WorkflowRun) (int, error) {
+func (c GitHubClient) GetWorkloadRunPullRequestNumber(ctx context.Context, wre github.WorkflowRunEvent) (int, error) {
+	clog.FromContext(ctx).Debugf("Getting PR number for workflow run %d", *wre.WorkflowRun.ID)
 
 	// Initialize pagination variables
 	opts := &github.PullRequestListOptions{
 		State:       "open",
-		Head:        fmt.Sprintf("%s:%s", *wr.Repository.Owner.Login, *wr.HeadBranch), // Filtering by branch name
+		Head:        fmt.Sprintf("%s:%s", *wre.Repo.Owner.Login, *wre.WorkflowRun.HeadBranch), // Filtering by branch name
 		ListOptions: github.ListOptions{PerPage: 10},
 	}
-
 	// Iterate through all pages of the results
 	for {
-		pulls, resp, err := c.inner.PullRequests.List(ctx, *wr.Repository.Owner.Login, *wr.Repository.Name, opts)
+		pulls, resp, err := c.inner.PullRequests.List(ctx, *wre.Repo.Owner.Login, *wre.Repo.Name, opts)
 		if err != nil {
 			return 0, fmt.Errorf("failed to list pull requests: %w", err)
 		}
 
 		// Check each pull request to see if the commit SHA matches
 		for _, pr := range pulls {
-			if *pr.Head.SHA == *wr.HeadSHA {
+			if *pr.Head.SHA == *wre.WorkflowRun.HeadSHA {
 				return *pr.Number, nil
 			}
 		}
@@ -198,6 +197,7 @@ func (c GitHubClient) GetWorkloadRunPullRequestNumber(ctx context.Context, wr *g
 		if resp.NextPage == 0 {
 			break
 		}
+
 		opts.Page = resp.NextPage // Update to fetch the next page
 	}
 

@@ -40,18 +40,27 @@ func getPublishConfig(ctx context.Context) *PublishConfig {
 	return &c
 }
 
+// todo return error
 func InitClient(ctx context.Context) Options {
 	log := clog.FromContext(ctx)
 	config := getPublishConfig(ctx)
 
+	clog.FromContext(ctx).Infof("GCP_PROJECT_ID %s", config.ProjectID)
+	clog.FromContext(ctx).Infof("EVENT_INGRESS_URI %s", config.IngressURI)
+
 	c, err := idtoken.NewClient(ctx, config.IngressURI)
 	if err != nil {
+		clog.FromContext(ctx).Infof("failed to create idtoken client: %v", err)
+		log.Errorf("failed to create idtoken client: %v", err)
 		log.Fatalf("failed to create idtoken client: %v", err) //nolint:gocritic
 	}
+	clog.FromContext(ctx).Infof("idtoken client created")
 	ceclient, err := cloudevents.NewClientHTTP(
 		cloudevents.WithTarget(config.IngressURI),
 		cehttp.WithClient(http.Client{Transport: httpmetrics.WrapTransport(c.Transport)}))
+	clog.FromContext(ctx).Infof("cloudevents client created")
 	if err != nil {
+		clog.FromContext(ctx).Infof("failed to create cloudevents client: %v", err)
 		log.Fatalf("failed to create cloudevents client: %v", err)
 	}
 
@@ -69,13 +78,27 @@ func (o Options) Publish(ctx context.Context, data []byte, eventType, subject st
 	event.SetSubject(subject)
 	event.SetType(eventType)
 	event.SetTime(time.Now())
+	event.SetSpecVersion(cloudevents.VersionV1)
 	for k, v := range extensions {
 		event.SetExtension(k, v)
 	}
-	event.SetSpecVersion(cloudevents.VersionV1)
-	if err := event.SetData(cloudevents.ApplicationJSON, data); err != nil {
-		return fmt.Errorf("failed to set cloudevent data: %v\n", err)
+
+	if err := event.SetData(cloudevents.ApplicationJSON, struct {
+		When time.Time       `json:"when"`
+		Body json.RawMessage `json:"body"`
+	}{
+		When: time.Now(),
+		Body: data,
+	}); err != nil {
+		clog.FromContext(ctx).Errorf("failed to set cloudevent data: %v", err)
+		return fmt.Errorf("failed to set data: %v", err)
 	}
+
+	// detalied logging
+	clog.FromContext(ctx).Infof("Publishing event %s", eventType)
+	clog.FromContext(ctx).Infof("Event data: %s", string(data))
+	clog.FromContext(ctx).Infof("Event subject: %s", subject)
+	clog.FromContext(ctx).Infof("Event extensions: %v", extensions)
 
 	const retryDelay = 10 * time.Millisecond
 	const maxRetry = 3

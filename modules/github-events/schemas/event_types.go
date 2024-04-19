@@ -98,18 +98,45 @@ type Workflow struct {
 // https://pkg.go.dev/github.com/google/go-github/v60/github#WorkflowRun
 type WorkflowRun struct {
 	ID           bigquery.NullInt64     `json:"id,omitempty" bigquery:"id"`
-	RunNumber    bigquery.NullInt64     `json:"run_number,omitempty" bigquery:"run_number"`
-	RunAttempt   bigquery.NullInt64     `json:"run_attempt,omitempty" bigquery:"run_attempt"`
+	Name         bigquery.NullString    `json:"name,omitempty" bigquery:"name"`
+	NodeID       bigquery.NullString    `json:"node_id,omitempty" bigquery:"node_id"`
 	HeadBranch   bigquery.NullString    `json:"head_branch,omitempty" bigquery:"head_branch"`
 	HeadSHA      bigquery.NullString    `json:"head_sha,omitempty" bigquery:"head_sha"`
-	Name         bigquery.NullString    `json:"name,omitempty" bigquery:"name"`
+	RunNumber    bigquery.NullInt64     `json:"run_number,omitempty" bigquery:"run_number"`
+	RunAttempt   bigquery.NullInt64     `json:"run_attempt,omitempty" bigquery:"run_attempt"`
 	Event        bigquery.NullString    `json:"event,omitempty" bigquery:"event"`
+	DisplayTitle bigquery.NullString    `json:"display_title,omitempty" bigquery:"display_title"`
 	Status       bigquery.NullString    `json:"status,omitempty" bigquery:"status"`
+	Conclusion   bigquery.NullString    `json:"conclusion,omitempty" bigquery:"conclusion"`
+	WorkflowID   bigquery.NullInt64     `json:"workflow_id,omitempty" bigquery:"workflow_id"`
+	CheckSuiteID bigquery.NullInt64     `json:"check_suite_id,omitempty" bigquery:"check_suite_id"`
+	URL          bigquery.NullString    `json:"url,omitempty" bigquery:"url"`
+	HTMLURL      bigquery.NullString    `json:"html_url,omitempty" bigquery:"html_url"`
+	CreatedAt    bigquery.NullTimestamp `json:"created_at,omitempty" bigquery:"created_at"`
+	UpdatedAt    bigquery.NullTimestamp `json:"updated_at,omitempty" bigquery:"updated_at"`
 	RunStartedAt bigquery.NullTimestamp `json:"run_started_at,omitempty" bigquery:"run_started_at"`
-
-	// success, failure, cancelled, etc.
-	Conclusion bigquery.NullString `json:"conclusion,omitempty" bigquery:"conclusion"`
+	JobsURL      bigquery.NullString    `json:"jobs_url,omitempty" bigquery:"jobs_url"`
+	LogsURL      bigquery.NullString    `json:"logs_url,omitempty" bigquery:"logs_url"`
+	ArtifactsURL bigquery.NullString    `json:"artifacts_url,omitempty" bigquery:"artifacts_url"`
+	CancelURL    bigquery.NullString    `json:"cancel_url,omitempty" bigquery:"cancel_url"`
+	RerunURL     bigquery.NullString    `json:"rerun_url,omitempty" bigquery:"rerun_url"`
+	WorkflowURL  bigquery.NullString    `json:"workflow_url,omitempty" bigquery:"workflow_url"`
 }
+
+//type WorkflowRun struct {
+//	ID           bigquery.NullInt64     `json:"id,omitempty" bigquery:"id"`
+//	RunNumber    bigquery.NullInt64     `json:"run_number,omitempty" bigquery:"run_number"`
+//	RunAttempt   bigquery.NullInt64     `json:"run_attempt,omitempty" bigquery:"run_attempt"`
+//	HeadBranch   bigquery.NullString    `json:"head_branch,omitempty" bigquery:"head_branch"`
+//	HeadSHA      bigquery.NullString    `json:"head_sha,omitempty" bigquery:"head_sha"`
+//	Name         bigquery.NullString    `json:"name,omitempty" bigquery:"name"`
+//	Event        bigquery.NullString    `json:"event,omitempty" bigquery:"event"`
+//	Status       bigquery.NullString    `json:"status,omitempty" bigquery:"status"`
+//	RunStartedAt bigquery.NullTimestamp `json:"run_started_at,omitempty" bigquery:"run_started_at"`
+//
+//	// success, failure, cancelled, etc.
+//	Conclusion bigquery.NullString `json:"conclusion,omitempty" bigquery:"conclusion"`
+//}
 
 // https://docs.github.com/developers/webhooks-and-events/webhook-events-and-payloads#workflow_run
 // subset of https://pkg.go.dev/github.com/google/go-github/v60/github#WorkflowRunEvent
